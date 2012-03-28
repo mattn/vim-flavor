@@ -111,11 +111,17 @@ module Vim
       end
 
       def clone()
-        message = %x[
-          {
-            git clone '#{@repo_uri}' '#{cached_repo_path}'
-          } 2>&1
-        ]
+        if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|bccwin/
+          message = %x[
+            git clone #{@repo_uri} #{cached_repo_path} 2>&1
+          ]
+        else
+          message = %x[
+            {
+              git clone '#{@repo_uri}' '#{cached_repo_path}'
+            } 2>&1
+          ]
+        end
         if $? != 0 then
           raise RuntimeError, message
         end
@@ -123,12 +129,19 @@ module Vim
       end
 
       def fetch()
-        message = %x[
-          {
-            cd #{cached_repo_path.inspect} &&
-            git fetch origin
-          } 2>&1
-        ]
+        if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|bccwin/
+          message = %x[
+            cd #{cached_repo_path.inspect.tr('/', '\\')} &
+            git fetch origin 2>&1
+          ]
+        else
+          message = %x[
+            {
+              cd #{cached_repo_path.inspect} &&
+              git fetch origin
+            } 2>&1
+          ]
+        end
         if $? != 0 then
           raise RuntimeError, message
         end
@@ -136,19 +149,32 @@ module Vim
 
       def deploy(vimfiles_path)
         deploy_path = make_deploy_path(vimfiles_path)
-        message = %x[
-          {
-            cd '#{cached_repo_path}' &&
-            git checkout -f #{locked_version.inspect} &&
-            git checkout-index -a -f --prefix='#{deploy_path}/' &&
+        if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|bccwin/
+          message = %x[
+            cd "#{cached_repo_path.tr('/', '\\')}" &
+            git checkout -f #{locked_version.inspect} &
+            git checkout-index -a -f --prefix="#{deploy_path}/" &
+            vim -u NONE -i NONE -n -N -e -s -c " &
+              silent! helptags #{deploy_path}/doc
+              qall!
+            "
+            2>&1
+          ]
+        else
+          message = %x[
             {
-              vim -u NONE -i NONE -n -N -e -s -c '
-                silent! helptags #{deploy_path}/doc
-                qall!
-              ' || true
-            }
-          } 2>&1
-        ]
+              cd '#{cached_repo_path}' &&
+              git checkout -f #{locked_version.inspect} &&
+              git checkout-index -a -f --prefix='#{deploy_path}/' &&
+              {
+                vim -u NONE -i NONE -n -N -e -s -c '
+                  silent! helptags #{deploy_path}/doc
+                  qall!
+                ' || true
+              }
+            } 2>&1
+          ]
+        end
         if $? != 0 then
           raise RuntimeError, message
         end
@@ -156,23 +182,36 @@ module Vim
 
       def undeploy(vimfiles_path)
         deploy_path = make_deploy_path(vimfiles_path)
-        message = %x[
-          {
-            rm -fr '#{deploy_path}'
-          } 2>&1
-        ]
+        if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|bccwin/
+          message = %x[
+            del /QF "#{deploy_path}" 2>&1
+          ]
+        else
+          message = %x[
+            {
+              rm -fr '#{deploy_path}'
+            } 2>&1
+          ]
+        end
         if $? != 0 then
           raise RuntimeError, message
         end
       end
 
       def list_versions()
-        tags = %x[
-          {
-            cd '#{cached_repo_path}' &&
-            git tag
-          } 2>&1
-        ]
+        if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|bccwin/
+          tags = %x[
+            cd "#{cached_repo_path.tr('/', '\\')}" &
+            git tag 2>&1
+          ]
+        else
+          tags = %x[
+            {
+              cd '#{cached_repo_path}' &&
+              git tag
+            } 2>&1
+          ]
+        end
         if $? != 0 then
           raise RuntimeError, message
         end
@@ -211,12 +250,13 @@ module Vim
       end
 
       def repo_uri_from_repo_name(repo_name)
+        proto = ENV['VIM_FLAVOR_PROTOCOL'] or 'git'
         if /^([^\/]+)$/.match(repo_name) then
           m = Regexp.last_match
-          "git://github.com/vim-scripts/#{m[1]}.git"
+          "#{proto}://github.com/vim-scripts/#{m[1]}.git"
         elsif /^([A-Za-z0-9_-]+)\/(.*)$/.match(repo_name) then
           m = Regexp.last_match
-          "git://github.com/#{m[1]}/#{m[2]}.git"
+          "#{proto}://github.com/#{m[1]}/#{m[2]}.git"
         elsif /^[a-z]+:\/\/.*$/.match(repo_name) then
           repo_name
         else
@@ -440,7 +480,11 @@ module Vim
 
       def get_default_vimfiles_path()
         # FIXME: Compute more appropriate value.
-        "#{ENV['HOME']}/.vim"
+        if RUBY_PLATFORM.downcase =~ /mswin(?!ce)|mingw|bccwin/
+          "#{ENV['HOME']}/vimfiles"
+        else
+          "#{ENV['HOME']}/.vim"
+        end
       end
 
       def install(vimfiles_path)
